@@ -19,15 +19,20 @@ export default function Activity() {
   return (
     <>
       <PageHeader title={t("activity_title")}>
-        <div className="grid grid-cols-2 gap-1 rounded-full bg-line p-1">
+        {/* two tabs: either arrow key moves to the other one (roving tabindex) */}
+        <div role="tablist" className="grid grid-cols-2 gap-1 rounded-full bg-line p-1" onKeyDown={(e) => {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          const k = tab === "pickups" ? "txns" : "pickups";
+          setTab(k); document.getElementById(`tab-${k}`)?.focus();
+        }}>
           {(["pickups", "txns"] as const).map((k) => (
-            <button key={k} onClick={() => setTab(k)} className={`press rounded-full px-5 py-2 text-sm font-semibold ${tab === k ? "bg-bg shadow-md" : "text-muted"}`}>{t(`tab_${k}`)}</button>
+            <button key={k} role="tab" id={`tab-${k}`} aria-selected={tab === k} aria-controls="activity-panel" tabIndex={tab === k ? 0 : -1} onClick={() => setTab(k)} className={`press rounded-full px-5 py-2 text-sm font-semibold ${tab === k ? "bg-bg shadow-md" : "text-muted"}`}>{t(`tab_${k}`)}</button>
           ))}
         </div>
       </PageHeader>
 
       {tab === "pickups" ? (
-        <div key="p" className="stagger grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div key="p" id="activity-panel" role="tabpanel" aria-labelledby="tab-pickups" tabIndex={0} className="stagger grid grid-cols-1 gap-3 md:grid-cols-2">
           {ps.data.length === 0 && <p className="text-muted">{t("empty")}</p>}
           {ps.data.map((p) => (
             <article key={p.id} className="card p-5">
@@ -52,7 +57,7 @@ export default function Activity() {
           ))}
         </div>
       ) : (
-        <ul key="t" className="card stagger divide-y divide-line overflow-hidden">
+        <ul key="t" id="activity-panel" role="tabpanel" aria-labelledby="tab-txns" tabIndex={0} className="card stagger divide-y divide-line overflow-hidden">
           {tx.data.map((x) => {
             const { icon: Icon, tint } = TX[x.kind];
             const title = x.kind === "redeem" ? pick(reward(x.ref) ?? { fa: t("tx_redeem"), en: t("tx_redeem") }) : t(`tx_${x.kind}`);

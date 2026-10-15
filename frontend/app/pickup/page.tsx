@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, MapPin, Minus, Plus } from "lucide-react";
 import { api, refresh, useApi, type Catalog, type MaterialId, type Pickup } from "@/lib/api";
 import { formatDay, useI18n } from "@/lib/i18n";
-import { Confetti, Counter, ErrorBox, Loading, MATERIAL_ICON, PageHeader, Sheet, Slot } from "@/components/ui";
+import { Confetti, Counter, ErrorBox, Loading, MATERIAL_ICON, PageHeader, Sheet, Slot, useErr } from "@/components/ui";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -22,11 +22,13 @@ function Section({ n, title, children }: { n: number; title: string; children: R
 
 export default function PickupPage() {
   const { t, n, pick, locale } = useI18n();
+  const msg = useErr();
   const cat = useApi<Catalog>("/catalog"), hist = useApi<Pickup[]>("/pickups");
   const [qty, setQty] = useState<Partial<Record<MaterialId, number>>>({});
   const [day, setDay] = useState(0);
   const [slot, setSlot] = useState("17-20");
   const [address, setAddress] = useState<string>();
+  const [touched, setTouched] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Pickup | null>(null);
@@ -36,19 +38,20 @@ export default function PickupPage() {
   if (!cat.data) return <Loading rows={4} />;
   const mats = cat.data.materials;
   const addr = address ?? hist.data?.[0]?.address ?? "";
+  const addrBad = touched && addr.trim().length < 3;
   const items = Object.fromEntries(Object.entries(qty).filter(([, kg]) => kg! > 0)) as Record<MaterialId, number>;
   const kg = Object.values(items).reduce((a, b) => a + b, 0);
   const est = Object.entries(items).reduce((a, [m, k]) => a + mats[m as MaterialId].pts * k, 0);
   const bump = (m: MaterialId, d: number) => setQty((q) => ({ ...q, [m]: Math.min(100, Math.max(0, (q[m] ?? 0) + d)) }));
 
   const submit = async () => {
-    if (addr.trim().length < 3) return setErr(t("address_err"));
+    if (addr.trim().length < 3) { setTouched(true); return setErr(t("address_err")); }
     setBusy(true); setErr("");
     try {
       setDone(await api<Pickup>("/pickups", { items, day: days[day], slot, address: addr }));
       setQty({});
       refresh();
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setErr(msg(e)); } finally { setBusy(false); }
   };
 
   return (
@@ -70,9 +73,9 @@ export default function PickupPage() {
                       <div className="text-xs text-muted">{n(mats[m].pts)} {t("per_kg")}</div>
                     </button>
                     <div className="mt-3 flex items-center justify-between rounded-full bg-line p-1">
-                      <button aria-label="−" onClick={() => bump(m, -0.5)} disabled={!on} className="press grid size-8 place-items-center rounded-full bg-bg disabled:opacity-40"><Minus size={14} /></button>
-                      <span className="tnum text-sm font-bold">{n(v, 1)} <span className="text-xs font-normal text-muted">{t("kg")}</span></span>
-                      <button aria-label="+" onClick={() => bump(m, 0.5)} className="press grid size-8 place-items-center rounded-full bg-bg"><Plus size={14} /></button>
+                      <button aria-label={`${pick(mats[m])}: ${t("less")}`} onClick={() => bump(m, -0.5)} disabled={!on} className="press grid size-8 place-items-center rounded-full bg-bg disabled:opacity-40"><Minus size={14} /></button>
+                      <span className="tnum text-sm font-bold" aria-live="polite">{n(v, 1)} <span className="text-xs font-normal text-muted">{t("kg")}</span></span>
+                      <button aria-label={`${pick(mats[m])}: ${t("more")}`} onClick={() => bump(m, 0.5)} className="press grid size-8 place-items-center rounded-full bg-bg"><Plus size={14} /></button>
                     </div>
                   </div>
                 );
@@ -93,22 +96,23 @@ export default function PickupPage() {
           <Section n={3} title={t("step_slot")}>
             <div className="grid grid-cols-2 gap-1 rounded-2xl bg-line p-1 sm:grid-cols-4">
               {cat.data.slots.map((s) => (
-                <button key={s} onClick={() => setSlot(s)} className={`press rounded-xl py-2.5 text-sm font-semibold ${slot === s ? "bg-bg shadow-md" : "text-muted"}`}><Slot s={s} /></button>
+                <button key={s} aria-pressed={slot === s} onClick={() => setSlot(s)} className={`press rounded-xl py-2.5 text-sm font-semibold ${slot === s ? "bg-bg shadow-md" : "text-muted"}`}><Slot s={s} /></button>
               ))}
             </div>
           </Section>
           <Section n={4} title={t("step_where")}>
-            <label className="flex items-start gap-3 rounded-2xl border border-line bg-bg/60 p-4 focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/15">
+            <label className={`flex items-start gap-3 rounded-2xl border bg-bg/60 p-4 focus-within:ring-4 ${addrBad ? "border-red-400 focus-within:ring-red-500/15" : "border-line focus-within:border-brand focus-within:ring-brand/15"}`}>
               <MapPin size={20} className="mt-0.5 shrink-0 text-brand" />
-              <textarea rows={2} value={addr} onChange={(e) => { setAddress(e.target.value); setErr(""); }} placeholder={t("address_ph")} maxLength={200}
-                className="w-full resize-none bg-transparent outline-none placeholder:text-muted" aria-label={t("step_where")} />
+              <textarea rows={2} value={addr} onChange={(e) => { setAddress(e.target.value); setErr(""); }} onBlur={() => setTouched(true)} placeholder={t("address_ph")} maxLength={200}
+                className="w-full resize-none bg-transparent outline-none placeholder:text-muted" aria-label={t("step_where")} aria-invalid={addrBad} aria-describedby={addrBad ? "addr-err" : undefined} />
             </label>
+            {addrBad && <p id="addr-err" role="alert" className="mt-2 text-xs text-red-500">{t("address_err")}</p>}
           </Section>
         </div>
 
         {/* summary: sticky on desktop, pinned above the tab bar on phones */}
         <aside className="lg:col-span-2">
-          <div className={`glass fixed inset-x-3 bottom-24 z-20 rounded-[28px] p-4 shadow-2xl lg:sticky lg:inset-x-auto lg:top-10 lg:bottom-auto lg:p-6 ${err ? "shake" : ""}`} style={{ background: "var(--glass-strong)" }}>
+          <div className={`panel fixed inset-x-3 bottom-24 z-20 rounded-[28px] p-4 lg:sticky lg:inset-x-auto lg:top-10 lg:bottom-auto lg:p-6 ${err ? "shake" : ""}`}>
             <div className="hidden lg:block">
               <h2 className="mb-3 font-bold">{t("total")}</h2>
               <ul className="mb-4 grid gap-2 text-sm">
@@ -125,7 +129,7 @@ export default function PickupPage() {
               <button className="btn btn-primary press lg:hidden" disabled={!kg || busy} onClick={submit}>{busy ? t("sending") : t("confirm")}</button>
             </div>
             <button className="btn btn-primary press mt-5 hidden w-full lg:flex" disabled={!kg || busy} onClick={submit}>{busy ? t("sending") : t("confirm")}</button>
-            {(err || !kg) && <p className={`mt-2 text-xs ${err ? "text-red-500" : "text-muted"}`}>{err || t("select_one")}</p>}
+            {(err || !kg) && <p role={err ? "alert" : undefined} className={`mt-2 text-xs ${err ? "text-red-500" : "text-muted"}`}>{err || t("select_one")}</p>}
           </div>
         </aside>
       </div>

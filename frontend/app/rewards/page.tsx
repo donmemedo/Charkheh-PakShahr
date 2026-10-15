@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Bike, BookOpen, Check, Clapperboard, Coffee, Copy, ShoppingBasket, Sparkles, Sprout, TrainFront, Wifi, type LucideIcon } from "lucide-react";
 import { api, refresh, useApi, type Catalog, type Reward, type State } from "@/lib/api";
 import { useI18n, type Key } from "@/lib/i18n";
-import { Confetti, Counter, ErrorBox, Loading, PageHeader, Sheet } from "@/components/ui";
+import { Confetti, Counter, ErrorBox, Loading, PageHeader, Sheet, useErr } from "@/components/ui";
 
 const ICON: Record<string, LucideIcon> = { metro: TrainFront, coffee: Coffee, grocery: ShoppingBasket, book: BookOpen, net: Wifi, tree: Sprout, bike: Bike, cinema: Clapperboard };
 const GRAD: Record<string, string> = {
@@ -13,28 +13,31 @@ const GRAD: Record<string, string> = {
 
 export default function Rewards() {
   const { t, n, pick } = useI18n();
+  const msg = useErr();
   const cat = useApi<Catalog>("/catalog"), st = useApi<State>("/state");
   const [filter, setFilter] = useState("all");
   const [sel, setSel] = useState<Reward | null>(null);
   const [code, setCode] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
   if (cat.error || st.error) return <ErrorBox onRetry={() => { cat.reload(); st.reload(); }} />;
   if (!cat.data || !st.data) return <Loading rows={3} />;
   const balance = st.data.balance;
   const cats = ["all", ...new Set(cat.data.rewards.map((r) => r.cat))];
   const list = cat.data.rewards.filter((r) => filter === "all" || r.cat === filter);
-  const close = () => { setSel(null); setCode(""); setCopied(false); };
+  const close = () => { setSel(null); setCode(""); setCopied(false); setErr(""); };
   const redeem = async () => {
-    setBusy(true);
-    try { setCode((await api<{ code: string }>(`/rewards/${sel!.id}/redeem`, {})).code); refresh(); } finally { setBusy(false); }
+    setBusy(true); setErr("");
+    try { setCode((await api<{ code: string }>(`/rewards/${sel!.id}/redeem`, {})).code); refresh(); }
+    catch (e) { setErr(msg(e, { 409: "need_more" })); refresh(); } finally { setBusy(false); }
   };
 
   return (
     <>
       <PageHeader title={t("rewards_title")} sub={t("rewards_sub")}>
-        <div className="glass flex items-center gap-2 rounded-full px-5 py-2.5 font-bold">
+        <div className="chip flex items-center gap-2 rounded-full px-5 py-2.5 font-bold">
           <Sparkles size={18} className="text-brand" /> <Counter value={balance} /> <span className="text-sm font-normal text-muted">{t("points")}</span>
         </div>
       </PageHeader>
@@ -74,6 +77,7 @@ export default function Rewards() {
             <h2 className="text-xl font-extrabold">{t("redeem_q")}</h2>
             <p className="font-semibold">{pick(sel)}</p>
             <p className="text-sm text-muted"><b className="text-fg">{n(sel.cost)} {t("pts")}</b> {t("redeem_cost")}</p>
+            {err && <p role="alert" className="text-sm font-semibold text-red-500">{err}</p>}
             <div className="mt-2 grid grid-cols-2 gap-3">
               <button className="btn press bg-line" onClick={close}>{t("cancel")}</button>
               <button className="btn btn-primary press" disabled={busy} onClick={redeem}>{t("redeem")}</button>

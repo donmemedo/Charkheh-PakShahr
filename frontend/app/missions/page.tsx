@@ -3,16 +3,23 @@ import { useState } from "react";
 import { Check, Crown, X } from "lucide-react";
 import { api, refresh, useApi, type Catalog, type District, type Mission } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { ErrorBox, Loading, PageHeader } from "@/components/ui";
+import { ErrorBox, Loading, PageHeader, useErr } from "@/components/ui";
 
 function Quiz({ m, i }: { m: Mission; i: number }) {
   const { t, n, locale } = useI18n();
-  const [res, setRes] = useState<{ choice: number; correct: boolean; answer: number } | null>(null);
+  const msg = useErr();
+  const [res, setRes] = useState<{ choice: number; correct: boolean; answer?: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   const q = m[locale];
   const choose = async (choice: number) => {
-    const r = await api<{ correct: boolean; answer: number }>(`/missions/${m.id}/answer`, { choice });
-    setRes({ choice, ...r });
-    if (r.correct) setTimeout(refresh, 900);
+    if (busy) return;
+    setBusy(true); setErr(""); setRes(null); // clearing first lets a repeated "wrong" be announced again
+    try {
+      const r = await api<{ correct: boolean; answer?: number }>(`/missions/${m.id}/answer`, { choice });
+      setRes({ choice, ...r });
+      if (r.correct) setTimeout(refresh, 900);
+    } catch (e) { setErr(msg(e)); } finally { setBusy(false); }
   };
   const solved = m.done || res?.correct;
   return (
@@ -26,7 +33,7 @@ function Quiz({ m, i }: { m: Mission; i: number }) {
         {q.a.map((a, j) => {
           const picked = res?.choice === j, right = solved && (res ? res.answer === j : false);
           return (
-            <button key={j} disabled={!!solved} onClick={() => choose(j)}
+            <button key={j} disabled={!!solved || busy} onClick={() => choose(j)}
               className={`press flex items-center justify-between rounded-2xl border px-4 py-3 text-start text-sm font-medium transition-colors
                 ${right ? "border-brand bg-brand-soft text-brand" : picked ? "border-red-400 bg-red-500/10 text-red-500" : "border-line hover:bg-line"} disabled:cursor-default`}>
               {a}
@@ -35,7 +42,8 @@ function Quiz({ m, i }: { m: Mission; i: number }) {
           );
         })}
       </div>
-      {res && <p className={`mt-3 text-sm font-semibold ${res.correct ? "text-brand" : "text-red-500"}`}>{res.correct ? `${t("correct")} +${n(m.pts)}` : t("wrong")}</p>}
+      <p role="status" className={`mt-3 text-sm font-semibold empty:mt-0 ${res?.correct ? "text-brand" : "text-red-500"}`}>{res ? (res.correct ? `${t("correct")} +${n(m.pts)}` : t("wrong")) : ""}</p>
+      {err && <p role="alert" className="mt-3 text-sm font-semibold text-red-500">{err}</p>}
       {res && !res.correct && <button className="mt-2 text-sm text-muted underline" onClick={() => setRes(null)}>{t("retry")}</button>}
     </article>
   );

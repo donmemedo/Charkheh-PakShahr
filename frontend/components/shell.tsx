@@ -39,7 +39,7 @@ function Toggles() {
   }, [pref]);
   const Icon = THEME_ICON[pref];
   const next: Pref = pref === "system" ? "light" : pref === "light" ? "dark" : "system";
-  const btn = "glass press grid h-10 min-w-10 place-items-center rounded-full px-3 text-sm font-semibold";
+  const btn = "chip press grid h-10 min-w-10 place-items-center rounded-full px-3 text-sm font-semibold"; // solid: these sit on glass bars
   return (
     <div className="flex gap-2">
       <button className={btn} aria-label={t("lang")} onClick={(e) => reveal(e, () => setLocale(locale === "fa" ? "en" : "fa"))}>
@@ -60,7 +60,7 @@ function Logo() {
       <span className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-brand to-brand-2 text-white shadow-lg shadow-brand/30">
         <Recycle size={22} strokeWidth={2.4} />
       </span>
-      <span className="text-xl font-extrabold tracking-tight">{t("brand")}</span>
+      <span className="text-xl font-extrabold ltr:tracking-tight">{t("brand")}</span>
     </Link>
   );
 }
@@ -69,6 +69,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
   const path = usePathname();
   const active = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+  // decorative background motion: off on weak devices (see globals.css); hidden tabs skip rendering it anyway
+  useEffect(() => {
+    const nav = navigator as Navigator & { deviceMemory?: number };
+    document.documentElement.classList.toggle("low-power", (nav.hardwareConcurrency ?? 8) <= 4 || (nav.deviceMemory ?? 8) <= 4);
+  }, []);
   return (
     <>
       <div className="aurora" aria-hidden><i /><i /><i /></div>
@@ -91,7 +96,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <header className="glass sticky top-0 z-30 flex items-center justify-between border-x-0 border-t-0 px-4 py-3 md:hidden">
         <Logo />
         <div className="flex items-center gap-2">
-          <Link href="/city" aria-label={t("nav_city")} className="glass press grid size-10 place-items-center rounded-full"><Landmark size={18} /></Link>
+          <Link href="/city" aria-label={t("nav_city")} className="chip press grid size-10 place-items-center rounded-full"><Landmark size={18} /></Link>
           <Toggles />
         </div>
       </header>
