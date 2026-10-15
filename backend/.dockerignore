@@ -1,3 +1,5 @@
 .venv
 data
 __pycache__
+test_api.py
+requirements-dev.txt
