@@ -1,0 +1,9 @@
+# Direct dependencies. requirements.txt is the hash-locked tree built from this file:
+#   uv pip compile requirements.in --generate-hashes --python-version 3.12 --python-platform linux -o requirements.txt
+fastapi==0.142.4
+starlette==1.7.0
+pydantic==2.13.5
+uvicorn==0.53.0
+# uvicorn's fast parser and loop, without the rest of uvicorn[standard] (watchfiles, websockets, dotenv, pyyaml)
+httptools==0.8.0
+uvloop==0.22.1
