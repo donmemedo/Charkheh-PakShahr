@@ -1,0 +1,4 @@
+# Test dependencies on top of the runtime set. Lock:
+#   uv pip compile requirements-dev.in --generate-hashes --python-version 3.12 --python-platform linux -o requirements-dev.txt
+-r requirements.in
+httpx==0.28.1

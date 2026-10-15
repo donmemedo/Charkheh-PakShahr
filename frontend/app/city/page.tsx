@@ -5,10 +5,10 @@ import { useApi, type Catalog, type City } from "@/lib/api";
 import { useI18n, type Key } from "@/lib/i18n";
 import { Counter, ErrorBox, Loading, PageHeader } from "@/components/ui";
 
-const KPI: { k: keyof City["kpi"]; label: Key; icon: LucideIcon; tint: string; digits?: number; suffix?: string }[] = [
+const KPI: { k: keyof City["kpi"]; label: Key; icon: LucideIcon; tint: string; digits?: number; pct?: boolean }[] = [
   { k: "tons", label: "k_tons", icon: Recycle, tint: "from-emerald-400 to-green-600" },
   { k: "mau", label: "k_mau", icon: Users, tint: "from-sky-400 to-blue-600" },
-  { k: "participation", label: "k_part", icon: Percent, tint: "from-violet-400 to-purple-600", digits: 1, suffix: "٪" },
+  { k: "participation", label: "k_part", icon: Percent, tint: "from-violet-400 to-purple-600", digits: 1, pct: true },
   { k: "landfillSaved", label: "k_landfill", icon: Mountain, tint: "from-amber-400 to-orange-600" },
   { k: "co2", label: "k_co2", icon: Cloud, tint: "from-cyan-400 to-teal-600" },
   { k: "partners", label: "k_partners", icon: Handshake, tint: "from-pink-400 to-rose-600" },
@@ -48,7 +48,7 @@ function Area({ data }: { data: City["months"] }) {
 }
 
 function Donut({ mix, cat, total }: { mix: City["materials"]; cat: Catalog; total: number }) {
-  const { n, pick } = useI18n();
+  const { n, pick, t } = useI18n();
   const r = 70, c = 2 * Math.PI * r;
   let acc = 0;
   return (
@@ -61,14 +61,14 @@ function Donut({ mix, cat, total }: { mix: City["materials"]; cat: Catalog; tota
             return <circle key={m.id} cx="95" cy="95" r={r} fill="none" stroke={cat.materials[m.id].color} strokeWidth="26" strokeDasharray={`${len - 3} ${c}`} strokeDashoffset={-off} />;
           })}
         </svg>
-        <div className="absolute inset-0 grid place-items-center text-center"><div><div className="text-2xl font-extrabold"><Counter value={total} /></div><div className="text-xs text-muted">t</div></div></div>
+        <div className="absolute inset-0 grid place-items-center text-center"><div><div className="text-2xl font-extrabold"><Counter value={total} /></div><div className="text-xs text-muted">{t("ton")}</div></div></div>
       </div>
       <ul className="grid gap-2 text-sm">
         {mix.map((m) => (
           <li key={m.id} className="flex items-center gap-2">
             <span className="size-3 rounded-full" style={{ background: cat.materials[m.id].color }} />
             <span className="flex-1">{pick(cat.materials[m.id])}</span>
-            <span className="tnum font-bold">{n(m.pct)}٪</span>
+            <span className="tnum font-bold">{n(m.pct)}{t("pct")}</span>
           </li>
         ))}
       </ul>
@@ -86,16 +86,16 @@ export default function CityPage() {
   return (
     <>
       <PageHeader title={t("city_title")} sub={t("city_sub")}>
-        <span className="flex items-center gap-2 rounded-full bg-brand-soft px-4 py-2 text-sm font-bold text-brand">
-          <span className="relative flex size-2.5"><span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-75" /><span className="relative inline-flex size-2.5 rounded-full bg-brand" /></span> LIVE
+        <span role="status" className="flex items-center gap-2 rounded-full bg-brand-soft px-4 py-2 text-sm font-bold text-brand">
+          <span aria-hidden className="relative flex size-2.5"><span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-75" /><span className="relative inline-flex size-2.5 rounded-full bg-brand" /></span> {t("live")}
         </span>
       </PageHeader>
       <div className="stagger grid grid-cols-1 gap-5">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-          {KPI.map(({ k, label, icon: Icon, tint, digits, suffix }) => (
+          {KPI.map(({ k, label, icon: Icon, tint, digits, pct }) => (
             <div key={k} className="card p-5">
               <span className={`grid size-10 place-items-center rounded-xl bg-gradient-to-br ${tint} text-white shadow-lg`}><Icon size={20} /></span>
-              <div className="mt-4 text-2xl font-extrabold"><Counter value={kpi[k]} digits={digits} />{suffix}</div>
+              <div className="mt-4 text-2xl font-extrabold"><Counter value={kpi[k]} digits={digits} />{pct && t("pct")}</div>
               <div className="text-xs text-muted">{t(label)}</div>
             </div>
           ))}

@@ -1,28 +1,39 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CupSoda, Milk, Newspaper, Smartphone, Wine, type LucideIcon } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type Key } from "@/lib/i18n";
 import type { MaterialId } from "@/lib/api";
 
 export const MATERIAL_ICON: Record<MaterialId, LucideIcon> = { paper: Newspaper, plastic: Milk, metal: CupSoda, glass: Wine, ewaste: Smartphone };
 
-/** Number that springs to its new value. */
+/** Localized message for a failed api() call; `map` overrides per status (e.g. {409: "need_more"}). */
+export function useErr() {
+  const { t } = useI18n();
+  return (e: unknown, map: Partial<Record<number, Key>> = {}) => {
+    const s = (e as { status?: number })?.status ?? 0;
+    return t(map[s] ?? (s === 409 ? "conflict" : s === 429 ? "slow_down" : s === 400 || s === 422 ? "invalid" : "error"));
+  };
+}
+
+/** Number that springs to its new value. Writes the DOM directly: no React render per frame. */
 export function Counter({ value, digits = 0 }: { value: number; digits?: number }) {
   const { n } = useI18n();
-  const [shown, setShown] = useState(0);
-  const from = useRef(0);
-  useEffect(() => {
+  const el = useRef<HTMLSpanElement>(null);
+  const fmt = useRef(n), from = useRef(0);
+  useLayoutEffect(() => { fmt.current = n; }); // a count in flight switches locale with the page
+  useLayoutEffect(() => {
     const start = performance.now(), a = from.current;
     let raf = 0;
     const tick = (now: number) => {
-      const p = Math.min(1, (now - start) / 1400), e = p === 1 ? 1 : 1 - Math.pow(2, -10 * p);
-      setShown(a + (value - a) * e);
-      if (p < 1) raf = requestAnimationFrame(tick); else from.current = value;
+      const p = Math.min(1, Math.max(0, now - start) / 1400), e = p === 1 ? 1 : 1 - Math.pow(2, -10 * p);
+      from.current = a + (value - a) * e; // a new value restarts from what is on screen, not from the old start
+      el.current!.textContent = fmt.current(from.current, digits);
+      if (p < 1) raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
+    tick(start); // before paint: the first frame already shows the start value
     return () => cancelAnimationFrame(raf);
-  }, [value]);
-  return <span className="tnum">{n(shown, digits)}</span>;
+  }, [value, digits]);
+  return <span ref={el} className="tnum">{n(value, digits)}</span>;
 }
 
 /** Apple Watch-style activity rings. values are 0..1. */
@@ -46,18 +57,71 @@ export function Rings({ rings, size = 168 }: { rings: { value: number; color: st
   );
 }
 
-/** Native <dialog>: bottom sheet on phones, centered card on desktop. */
+const DECEL = 0.998; // scroll-like deceleration for momentum projection
+const RESPONSE = 0.3; // spring response (s), Apple sheet: damping ratio .8 after a flick, 1 (no bounce) otherwise
+
+/** Native <dialog>: bottom sheet on phones, centered card on desktop. On phones it tracks the finger 1:1 and springs home or away. */
 export function Sheet({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const g = useRef({ id: -1, y: 0, v: 0, start: 0, grab: 0, hist: [] as [number, number][], raf: 0 });
   useEffect(() => {
     const d = ref.current!;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
+    if (open && !d.open) { d.style.transform = d.style.transition = ""; g.current.y = 0; d.showModal(); }
+    if (!open && d.open) { cancelAnimationFrame(g.current.raf); d.close(); }
   }, [open]);
+  useEffect(() => { const s = g.current; return () => cancelAnimationFrame(s.raf); }, []); // no frame outlives the sheet
+  const set = (y: number) => { const d = ref.current!; g.current.y = y; d.style.transition = "none"; d.style.transform = `translateY(${y}px)`; };
+  const spring = (to: number, done?: () => void) => {
+    const s = g.current, k = (2 * Math.PI / RESPONSE) ** 2, c = (4 * Math.PI * (Math.abs(s.v) > 300 ? 0.8 : 1)) / RESPONSE;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.032, Math.max(0, now - last) / 1000); last = now;
+      s.v += (-k * (s.y - to) - c * s.v) * dt; set(s.y + s.v * dt);
+      if (Math.abs(s.y - to) > 0.5 || Math.abs(s.v) > 20) s.raf = requestAnimationFrame(tick);
+      else if (done) done(); else { ref.current!.style.transform = ref.current!.style.transition = ""; s.y = s.v = 0; }
+    };
+    s.raf = requestAnimationFrame(tick);
+  };
+  // take over from the live on-screen position (a running spring or the CSS entrance), then follow the finger 1:1
+  const grab = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = g.current;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    s.y = new DOMMatrix(getComputedStyle(ref.current!).transform).m42; s.grab = e.clientY - s.y; s.hist = [[e.timeStamp, s.y]];
+  };
+  const down = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = g.current;
+    if (!e.isPrimary || e.button || matchMedia("(min-width: 768px), (prefers-reduced-motion: reduce)").matches) return;
+    cancelAnimationFrame(s.raf); // a touch catches the sheet mid-flight
+    s.id = e.pointerId; s.start = e.clientY; s.v = 0; s.hist = [[e.timeStamp, s.y]];
+    if ((e.target as Element).closest("[data-handle]")) grab(e); // the handle drags at once; elsewhere taps stay taps
+  };
+  const move = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = g.current, el = e.currentTarget;
+    if (e.pointerId !== s.id || !e.buttons) return;
+    if (!el.hasPointerCapture(e.pointerId)) {
+      if (Math.abs(e.clientY - s.start) < 10) return; // 10 px hysteresis so buttons inside (copy code, OK) still get their click
+      grab(e);
+    }
+    const h = el.offsetHeight, raw = e.clientY - s.grab;
+    set(raw < 0 ? -(-raw * h * 0.55) / (h + 0.55 * -raw) : raw); // rubber-band past the top
+    s.hist.push([e.timeStamp, s.y]); while (s.hist.length > 1 && e.timeStamp - s.hist[0][0] > 100) s.hist.shift();
+  };
+  const up = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = g.current, el = e.currentTarget;
+    if (e.pointerId !== s.id) return;
+    s.id = -1;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    else if (!s.y) return; // a tap on a resting sheet: leave it alone
+    // release velocity from the last 100 ms (0 when a tap merely caught the sheet), projected to where a flick would stop
+    const [t0, y0] = s.hist[0], dt = e.timeStamp - t0, h = el.offsetHeight;
+    s.v = dt > 0 ? ((s.y - y0) / dt) * 1000 : 0;
+    const rest = s.y + (s.v / 1000) * DECEL / (1 - DECEL);
+    spring(rest > h / 2 ? h + 24 : 0, rest > h / 2 ? onClose : undefined);
+  };
   return (
     <dialog ref={ref} className="sheet" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
-      <div className="glass m-3 rounded-[32px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl" style={{ background: "var(--glass-strong)" }}>
-        <div className="mx-auto -mt-2 mb-4 h-1.5 w-10 rounded-full bg-line md:hidden" />
+      <div className="panel m-3 rounded-[32px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+        <div data-handle aria-hidden className="-mx-6 -mt-6 mb-2 flex justify-center pt-4 pb-2 md:hidden"><span className="h-1.5 w-10 rounded-full bg-line" /></div>
         {children}
       </div>
     </dialog>

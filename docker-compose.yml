@@ -1,10 +1,23 @@
 services:
   backend:
     build: ./backend
+    environment:
+      DEMO_MODE: "${DEMO_MODE:-0}"          # 1 for the demo (/docs, citizen-side "simulate delivery"); off unless set
+      COLLECTOR_KEY: "${COLLECTOR_KEY:-}"   # 32+ chars; complete needs it when DEMO_MODE is off
+      PARTNER_KEY: "${PARTNER_KEY:-}"       # 32+ chars; partners send it to spend a reward code
+      TRUST_PROXY: "1"                      # rate limits key on the X-Forwarded-For that `edge` sets (see main.py)
     volumes:
+      # the image runs as uid 10001; a volume created by the old root image needs one chown first:
+      #   docker run --rm -v <project>_sabz-data:/data alpine chown -R 10001:10001 /data
       - sabz-data:/data
     ports:
-      - "${API_PORT:-8026}:8000"   # API docs at /docs
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8026}:8000"   # loopback only; the browser talks to the frontend
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 1
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -16,11 +29,29 @@ services:
       context: ./frontend
       args:
         BACKEND_URL: http://backend:8000
-    ports:
-      - "${WEB_PORT:-3026}:3000"
+    # no published port: clients reach Next only through `edge`, so they cannot forge X-Forwarded-For
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
     depends_on:
       backend:
         condition: service_healthy
+    restart: unless-stopped
+
+  # The public entry. Caddy replaces any client-sent X-Forwarded-For with the client's address, and Next's
+  # /api rewrite passes it on unchanged, so the backend rate limit is per client rather than one shared bucket.
+  edge:
+    image: caddy:2-alpine
+    command: caddy reverse-proxy --from :80 --to frontend:3000
+    ports:
+      - "${WEB_PORT:-3026}:80"
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]   # the caddy binary carries this file capability; exec fails without it
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 1
+    depends_on: [frontend]
     restart: unless-stopped
 
 volumes:

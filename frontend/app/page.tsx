@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowUpRight, CalendarDays, Clock, Gift, Mountain, Plus, Sparkles, Target, TreePine, Truck } from "lucide-react";
 import { api, refresh, useApi, type Catalog, type Pickup, type State } from "@/lib/api";
 import { formatDay, useI18n, type Key } from "@/lib/i18n";
-import { Confetti, Counter, ErrorBox, Loading, MATERIAL_ICON, Rings, Slot, TIER_STYLE } from "@/components/ui";
+import { Confetti, Counter, ErrorBox, Loading, MATERIAL_ICON, Rings, Slot, TIER_STYLE, useErr } from "@/components/ui";
 
 function Wallet({ s }: { s: State }) {
   const { t } = useI18n();
@@ -23,7 +23,7 @@ function Wallet({ s }: { s: State }) {
         <span className={`rounded-full bg-gradient-to-r ${TIER_STYLE[s.tier]} px-3 py-1 text-xs font-bold text-black/80 shadow`}>{t(`tier_${s.tier}` as Key)}</span>
       </div>
       <div className="mt-4 flex items-baseline gap-3">
-        <span className="text-6xl font-extrabold tracking-tight md:text-7xl"><Counter value={s.balance} /></span>
+        <span className="text-6xl font-extrabold ltr:tracking-tight md:text-7xl"><Counter value={s.balance} /></span>
         <span className="text-lg text-white/75">{t("points")}</span>
       </div>
       <div className="mt-auto pt-8">
@@ -66,14 +66,16 @@ function Impact({ s, c }: { s: State; c: Catalog }) {
 
 function Upcoming({ p, c, onDelivered }: { p: Pickup | null; c: Catalog; onDelivered: (pts: number) => void }) {
   const { t, n, pick, locale } = useI18n();
+  const msg = useErr();
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   const act = async (path: string) => {
-    setBusy(true);
+    setBusy(true); setErr("");
     try {
       const r = await api<Pickup | { ok: true }>(path, {});
       if ("points" in r) onDelivered(r.points);
       refresh();
-    } finally { setBusy(false); }
+    } catch (e) { setErr(msg(e)); } finally { setBusy(false); }
   };
   if (!p) return (
     <div className="card flex flex-col items-start gap-4 p-6">
@@ -101,11 +103,12 @@ function Upcoming({ p, c, onDelivered }: { p: Pickup | null; c: Catalog; onDeliv
           return <span key={m} className="chip flex items-center gap-1.5 px-3 py-1.5 text-sm"><Icon size={15} style={{ color: mat.color }} /> {pick(mat)} · {n(kg!, 1)} {t("kg")}</span>;
         })}
       </div>
-      <p className="text-xs text-muted">{t("simulate_d")}</p>
+      {c.demo && <p className="text-xs text-muted">{t("simulate_d")}</p>}
       <div className="flex flex-wrap gap-2">
-        <button disabled={busy} onClick={() => act(`/pickups/${p.id}/complete`)} className="btn btn-primary press h-11 flex-1">{t("simulate")}</button>
+        {c.demo && <button disabled={busy} onClick={() => act(`/pickups/${p.id}/complete`)} className="btn btn-primary press h-11 flex-1">{t("simulate")}</button>}
         <button disabled={busy} onClick={() => act(`/pickups/${p.id}/cancel`)} className="btn press h-11 text-muted hover:text-red-500">{t("cancel_req")}</button>
       </div>
+      {err && <p role="alert" className="text-sm font-semibold text-red-500">{err}</p>}
     </div>
   );
 }
@@ -158,9 +161,11 @@ export default function Home() {
       {toast !== null && (
         <>
           <Confetti />
-          <div className="pop glass fixed inset-x-0 top-24 z-[70] mx-auto w-fit rounded-full px-6 py-3 text-lg font-bold shadow-2xl">+{n(toast)} {t("points")} 🎉</div>
+          <div aria-hidden className="pop glass fixed inset-x-0 top-24 z-[70] mx-auto w-fit rounded-full px-6 py-3 text-lg font-bold shadow-2xl">+{n(toast)} {t("points")} 🎉</div>
         </>
       )}
+      {/* completion feedback: a live region must already exist before its text changes to be announced */}
+      <p role="status" className="sr-only">{toast !== null ? `+${n(toast)} ${t("points")}` : ""}</p>
     </div>
   );
 }

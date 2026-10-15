@@ -37,6 +37,8 @@ const dict = {
     k_tons: "تن پسماند خشک", k_mau: "کاربر فعال ماهانه", k_part: "نرخ مشارکت", k_landfill: "تن دفن کمتر", k_co2: "تن CO₂ کمتر", k_partners: "شریک پاداش",
     monthly: "روند ماهانه جمع‌آوری (تن)", mix: "ترکیب پسماند", districts: "رتبه منطقه‌ها",
     theme: "پوسته", lang: "زبان", error: "ارتباط با سرور برقرار نشد", retry: "تلاش دوباره",
+    conflict: "این درخواست دیگر قابل انجام نیست", slow_down: "کمی صبر کنید و دوباره تلاش کنید", invalid: "اطلاعات واردشده نادرست است؛ لطفا بررسی کنید",
+    less: "کمتر", more: "بیشتر", live: "زنده", ton: "تن", pct: "٪",
   },
   en: {
     brand: "SabzBank", tagline: "Turn your waste into rewards",
@@ -69,6 +71,8 @@ const dict = {
     k_tons: "tons of dry waste", k_mau: "monthly active users", k_part: "participation rate", k_landfill: "t landfill avoided", k_co2: "t CO₂ avoided", k_partners: "reward partners",
     monthly: "Monthly collection (tons)", mix: "Waste mix", districts: "District ranking",
     theme: "Theme", lang: "Language", error: "Couldn't reach the server", retry: "Retry",
+    conflict: "This action is no longer available", slow_down: "Please wait a moment and try again", invalid: "Some details aren't valid. Please check them",
+    less: "less", more: "more", live: "LIVE", ton: "t", pct: "%",
   },
 };
 export type Key = keyof typeof dict.fa;
@@ -81,7 +85,7 @@ export function I18nProvider({ initial, children }: { initial: Locale; children:
   useEffect(() => {
     document.documentElement.lang = locale;
     document.documentElement.dir = locale === "fa" ? "rtl" : "ltr";
-    document.cookie = `lang=${locale};path=/;max-age=31536000;samesite=lax`;
+    document.cookie = `lang=${locale};path=/;max-age=31536000;samesite=lax${location.protocol === "https:" ? ";secure" : ""}`;
   }, [locale]);
   const nf = locale === "fa" ? "fa-IR" : "en-US";
   const value: Ctx = {

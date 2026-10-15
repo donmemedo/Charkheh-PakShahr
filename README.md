@@ -9,19 +9,21 @@ citizens hand in separated dry waste, earn points, and spend them with partners;
 ## Run with Docker
 
 ```bash
-docker compose up --build
+DEMO_MODE=1 docker compose up --build   # demo: API docs and "Simulate delivery" on
 ```
 
-Web: http://localhost:3026 · API docs: http://localhost:8026/docs (override with `WEB_PORT` / `API_PORT`).
+Web: http://localhost:3026 · API docs (demo only): http://localhost:8026/docs (override with `WEB_PORT` / `API_PORT`).
+In production leave `DEMO_MODE` unset and set `COLLECTOR_KEY` and `PARTNER_KEY`, 32+ characters each
+(`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`). Upgrading a volume made by the old root image: see `docker-compose.yml`.
 
 ## Run locally
 
 ```bash
-cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn main:app --port 8026          # smoke test: .venv/bin/python test_api.py
+cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+DEMO_MODE=1 .venv/bin/uvicorn main:app --port 8026 --no-proxy-headers   # smoke test: .venv/bin/python test_api.py
 
 cd frontend && npm install
 BACKEND_URL=http://localhost:8026 npm run dev -- -p 3026
 ```
 
-On the dashboard, **Simulate delivery** stands in for the collector app: it weighs the bags (±10%) and credits the points.
+On the dashboard, **Simulate delivery** (demo mode only) stands in for the collector app: it weighs the bags (±10%) and credits the points.
