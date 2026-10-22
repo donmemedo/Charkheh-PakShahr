@@ -1,0 +1,62 @@
+# Weekly, one grouped PR per ecosystem. CI (ci.yml) is the check for every bump.
+# cooldown: a release must be 7 days old before Dependabot proposes it, so a hijacked release is usually yanked
+# first. Security updates ignore the cooldown.
+version: 2
+updates:
+  # Python: requirements.in is the source of truth. Dependabot cannot regenerate the uv hash lock, so its PRs
+  # bump the pins in requirements.in (and requirements-dev.in); before merging, run the `uv pip compile` command
+  # from the header of requirements.txt (and requirements-dev.txt) on the PR branch and push the new lock.
+  # CI's "Lock files match the .in pins" step stays red until that is done.
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    versioning-strategy: increase   # rewrite the == pins in the .in files
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ["*"]
+
+  # Base-image digests in both Dockerfiles (FROM image:tag@sha256:...)
+  - package-ecosystem: docker
+    directories: ["/backend", "/frontend"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      docker:
+        patterns: ["*"]
+
+  # The caddy digest in docker-compose.yml
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      compose:
+        patterns: ["*"]
+
+  # SHA-pinned actions in .github/workflows (Dependabot keeps the "# vX.Y.Z" comments in step)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

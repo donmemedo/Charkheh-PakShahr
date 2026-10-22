@@ -1,3 +1,25 @@
+# Docker's default json-file driver grows without limit: cap every service at 5 x 10 MB
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "5"}
+
+# One-shot jobs on the backend image (built by `up`/`build`), with the same lockdown as the backend.
+# Run from cron, e.g. daily:  docker compose --profile ops run --rm ops
+# ./backups must be writable by uid 10001 once:  mkdir -p backups && sudo chown 10001:10001 backups
+x-ops: &ops
+  image: ${COMPOSE_PROJECT_NAME}-backend
+  pull_policy: never
+  volumes:
+    - sabz-data:/data
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 32
+  mem_limit: 128m
+  logging: *logging
+  restart: "no"
+
 services:
   backend:
     build: ./backend
@@ -16,8 +38,10 @@ services:
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    pids_limit: 128   # threads count: anyio's pool alone grows to 40
     mem_limit: 256m
     cpus: 1
+    logging: *logging
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -30,10 +54,20 @@ services:
       args:
         BACKEND_URL: http://backend:8000
     # no published port: clients reach Next only through `edge`, so they cannot forge X-Forwarded-For
+    read_only: true   # the app files are root-owned and Next runs as `node`, so it could only ever write these:
+    tmpfs: [/tmp, /app/.next/cache]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    pids_limit: 128
     mem_limit: 512m
     cpus: 1
+    logging: *logging
+    healthcheck:   # renders the home page (proxy.ts + SSR); busybox wget fails on any non-2xx
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       backend:
         condition: service_healthy
@@ -42,17 +76,45 @@ services:
   # The public entry. Caddy replaces any client-sent X-Forwarded-For with the client's address, and Next's
   # /api rewrite passes it on unchanged, so the backend rate limit is per client rather than one shared bucket.
   edge:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
     command: caddy reverse-proxy --from :80 --to frontend:3000
     ports:
       - "${WEB_PORT:-3026}:80"
+    user: "65534:65534"   # nobody; the binary's file capability still lets it bind :80
+    read_only: true
+    # Caddy keeps only an instance id and locks here: no TLS and no admin API in this mode
+    tmpfs: ["/data:uid=65534,gid=65534", "/config:uid=65534,gid=65534"]
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]   # the caddy binary carries this file capability; exec fails without it
     security_opt: [no-new-privileges:true]
+    pids_limit: 64
     mem_limit: 128m
     cpus: 1
-    depends_on: [frontend]
+    logging: *logging
+    healthcheck:   # a static file through Caddy and Next, without touching the backend (its log stays quiet)
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1/icon.svg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      frontend:
+        condition: service_healthy
     restart: unless-stopped
+
+  # Online SQLite backup (WAL-safe, via ops.py) into ./backups, or BACKUP_DIR. Keep 14 and copy them off the host.
+  ops:
+    <<: *ops
+    profiles: ["ops"]
+    command: ["python", "ops.py", "backup", "/backups"]
+    volumes:
+      - sabz-data:/data
+      - ${BACKUP_DIR:-./backups}:/backups
+
+  # Ledger consistency check; exits non-zero on a mismatch:  docker compose --profile ops run --rm ledger-check
+  ledger-check:
+    <<: *ops
+    profiles: ["ops"]
+    command: ["python", "ops.py", "check"]
 
 volumes:
   sabz-data:

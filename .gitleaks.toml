@@ -1,0 +1,31 @@
+# gitleaks config: the default rule set plus three narrow allowlists, each matching one exact value shape, so
+# any other secret in the same files is still reported.
+# Run: docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.30.1 git --redact --config /repo/.gitleaks.toml /repo
+# Path-scoped entries use targetRules: gitleaks 8.30.1 `dir` mode skips whole files that match a global
+# allowlist's paths even under condition AND (upstream PR #2227); rule-scoped allowlists are evaluated correctly.
+title = "SabzBank"
+
+[extend]
+useDefault = true
+
+# The intentionally fake collector and partner keys the regression suite sets for itself (CK and PK in
+# backend/test_api.py: "<role>-0123456789-abcdefghij-<LETTERS>"). Only in that file; elsewhere they are reported.
+[[allowlists]]
+description = "fake test keys in backend/test_api.py"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)backend/test_api\.py$''']
+regexes = ['''^(collector|partner)-0123456789-abcdefghij-[A-Z]+$''']
+
+# uv/pip lock hash lines (backend/requirements*.txt): public sha256 digests of PyPI files, not secrets.
+# The whole line must be the hash, so a secret on any other line of the lock is still reported.
+[[allowlists]]
+description = "hash lines in the Python locks"
+regexTarget = "line"
+regexes = ['''^\s*--hash=sha256:[0-9a-f]{64}( \\)?$''']
+
+# npm lockfile integrity lines (frontend/package-lock.json): public sha512 digests of registry tarballs.
+[[allowlists]]
+description = "integrity lines in the npm lockfile"
+regexTarget = "line"
+regexes = ['''^\s*"integrity": "sha512-[A-Za-z0-9+/]{86}==",?$''']

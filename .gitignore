@@ -12,3 +12,14 @@ graphify-out/cache/
 graphify-out/cost.json
 graphify-out/manifest.json
 graphify-out/.graphify_*
+
+# secrets, local databases and backups never belong in git (compose reads a root .env)
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+backups/
+# local working notes, not for the public remote
+SESSION_HANDOFF.md
+skills-lock.json
