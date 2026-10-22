@@ -29,7 +29,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: python scripts/test_threat_intel.py
       - name: brief (also written to the job summary)
         run: python scripts/threat_intel.py --json threat-intel-brief.json | tee threat-intel-brief.md
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

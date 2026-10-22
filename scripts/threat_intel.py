@@ -7,7 +7,7 @@ Priority intelligence requirements (Direction):
   PIR-2  Which of those are known to be exploited in the wild (CISA KEV)?
   PIR-3  Which accepted risks in threat-intel/triage.json have expired or no longer match anything?
 
-Lifecycle (threat-intel/README.md maps each phase to code):
+Lifecycle (docs/THREAT_INTEL.md maps each phase to code):
   Collection     pins from the two lockfiles; OSV querybatch, then /v1/vulns/ID per advisory; the CISA KEV feed
   Processing     one finding per package and advisory, PYSEC/GHSA/CVE aliases merged; CVE aliases joined to KEV
   Analysis       severity rank, known-exploited flag, accepted-risk triage with expiry dates
@@ -200,11 +200,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--json", metavar="FILE", help="also write the findings as JSON")
     ap.add_argument("--allow-offline", action="store_true", help="exit 0 instead of 2 when OSV is unreachable")
-    ap.add_argument("--root", type=Path, default=ROOT, help="repository root (default: this script's parent)")
     args = ap.parse_args(argv)
 
-    py = parse_requirements((args.root / "backend/requirements.txt").read_text())
-    js = parse_lockfile(json.loads((args.root / "frontend/package-lock.json").read_text()))
+    py = parse_requirements((ROOT / "backend/requirements.txt").read_text())
+    js = parse_lockfile(json.loads((ROOT / "frontend/package-lock.json").read_text()))
     pkgs = [("PyPI", n, v) for n, v in py] + [("npm", n, v) for n, v in js]
     scope = [f"{len(py)} PyPI pins (backend/requirements.txt)", f"{len(js)} npm packages (frontend/package-lock.json)"]
 
@@ -225,7 +224,7 @@ def main(argv=None) -> int:
         kev, kev_note = {}, f"KEV unavailable ({e}), so PIR-2 is unanswered this run"
 
     findings = build_findings(pkgs, hits, vulns, kev)
-    triage_file = args.root / "threat-intel/triage.json"
+    triage_file = ROOT / "threat-intel/triage.json"
     entries = json.loads(triage_file.read_text()).get("entries", []) if triage_file.exists() else []
     notes = apply_triage(findings, entries, date.today())
     code = exit_code(findings, not errors, args.allow_offline)

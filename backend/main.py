@@ -623,7 +623,7 @@ def leaderboard():
 
 @app.get("/api/city")
 def city():
-    """Municipality panel. Pilot-scale synthetic baseline (business plan: ~4k t/year, 18k MAU) plus live user data."""
+    """Municipality panel. Synthetic pilot-scale sample data plus the live user's delivered weight."""
     rng = random.Random(26)
     months = [{"m": i, "tons": round(180 + i * 38 + rng.uniform(-15, 15)), "users": 4200 + i * 1250 + rng.randint(-200, 200)} for i in range(12)]
     s = state()  # computed once; ranking() reuses it
