@@ -15,6 +15,8 @@ DEMO_MODE=1 docker compose up --build   # demo: API docs and "Simulate delivery"
 Web: http://localhost:3026 · API docs (demo only): http://localhost:8026/docs (override with `WEB_PORT` / `API_PORT`).
 In production leave `DEMO_MODE` unset and set `COLLECTOR_KEY` and `PARTNER_KEY`, 32+ characters each
 (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`). Upgrading a volume made by the old root image: see `docker-compose.yml`.
+Collector and partner clients send `X-Collector-Key` or `X-Partner-Key`, and every POST needs `Content-Type: application/json`
+(a `{}` body is fine), or it gets 415.
 
 ## Run locally
 
@@ -22,6 +24,7 @@ In production leave `DEMO_MODE` unset and set `COLLECTOR_KEY` and `PARTNER_KEY`,
 cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 DEMO_MODE=1 .venv/bin/uvicorn main:app --port 8026 --no-proxy-headers   # smoke test: .venv/bin/python test_api.py
 
+# in a second terminal, from the repo root
 cd frontend && npm install
 BACKEND_URL=http://localhost:8026 npm run dev -- -p 3026
 ```

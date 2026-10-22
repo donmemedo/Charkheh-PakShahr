@@ -1,20 +1,21 @@
 # SabzBank security, performance and UI/UX audit
 
-Branch `audit/security-perf-ux`, against `main` at `1dfd7df`. Work done 2026-10-02 to 2026-10-15.
+Branch `audit/security-perf-ux`, against `main` at `1dfd7df`. Work done 2026-10-02 to 2026-10-16.
 
 ## Summary
 
-The MVP let any visitor mint unlimited points and spend points it did not have. The first took two unauthenticated calls; the second took a race between parallel redeems. Both are closed, together with every finding from the first code read and 15 more found in this pass.
+The MVP let any visitor mint unlimited points and spend points it did not have. The first took two unauthenticated calls; the second took a race between parallel redeems. Both are closed, together with every finding from the first code read except where the tables say otherwise, and 16 more found in this pass.
 
-- **Fixed:** all 16 backend findings (B1 to B16), all 4 backend performance findings (P1 to P4), infrastructure findings I1 and I2 (I3 partly), all 4 frontend security findings (F1 to F4) and all 4 frontend performance findings (FP1 to FP4).
-- **New in this pass:** 15 further issues, from a spoofable rate-limit key to 12 known advisories in Starlette 0.48.0. All 15 are fixed (table N1 to N15).
+- **Fixed:** all 16 backend findings (B1 to B16; B1 for the collector action only, because real user authentication is a product decision), backend performance findings P1 to P3, infrastructure findings I1 and I2, all 4 frontend security findings (F1 to F4) and frontend performance findings FP1, FP2 and FP4. P4 and FP3 are mitigated: a page visited before renders from a client cache, but every page still refetches. I3 (digest pinning) is open.
+- **New in this pass:** 16 further issues, from a spoofable rate-limit key to 6 known vulnerabilities in Starlette 0.48.0. All 16 are fixed (table N1 to N16).
 - **Verified by:**
-  - A backend regression suite of 55 assertions, including 8-way concurrency checks. It runs in about a minute.
+  - A backend regression suite of 60 assertions, including 8-way concurrency checks. It runs in a few seconds on an idle machine (about a minute under heavy load).
   - A clean TypeScript check and a clean production build.
   - Live header and CSP nonce checks against the built app.
   - semgrep on the final code (293 rules, 0 findings).
   - pip-audit on the hash-locked dependency file, with no known vulnerabilities.
-- **Not done:** see "Skipped and remaining" at the end. The main gap is real user authentication, which is a product decision.
+  - Docker runs on 2026-10-16: the backend image builds with `--require-hashes`, the old-volume `chown` works, and the Caddy edge replaces a forged `X-Forwarded-For`.
+- **Not done:** see "Skipped and remaining" at the end. The main gap is real user authentication, which is a product decision. `npm audit` also reports 3 high-severity advisories in the frontend lockfile that are still open.
 
 ## Method
 
@@ -56,23 +57,23 @@ G0  Obtain rewards or disrupt the service without earning points
 │   ├── G3.1 cross-site form POST                       closed by: JSON content type + Sec-Fetch-Site (B11)
 │   └── G3.2 clickjack the redeem button                closed by: frame-ancestors 'none', X-Frame-Options (F1)
 ├── OR G4  Deny service
-│   ├── G4.1 oversized body                             closed by: 16 KiB limit in Next and in FastAPI (B10, N13)
+│   ├── G4.1 oversized body                             closed by: 413 above 16 KiB in FastAPI; Next buffers at most 16 KiB (B10, N13)
 │   ├── G4.2 unbounded creation and listing             closed by: rate limit, cap, bounded pagination (B5, B6, N9)
 │   ├── G4.3 huge path or query id → 500                closed by: bounded Path and Query (B12, N9)
 │   ├── G4.4 concurrent writes → "database is locked"   closed by: WAL + busy timeout (P1)
 │   └── G4.5 dodge the rate limit by forging X-Forwarded-For or rotating IPv6 addresses
 │            closed by: Caddy edge sets the header, rightmost entry, uvicorn proxy trust off,
-│                       one bucket per IPv6 /64 (N1, N4, N5, N11)
+│                       one bucket per IPv6 /64 (N1, N6, N8, N11)
 ├── OR G5  Reach the backend directly
 │   ├── G5.1 public port 8026 and /docs                 closed by: loopback bind, docs off unless demo (B9)
-│   └── G5.2 escape from a root container               closed by: non-root user, read-only FS, no capabilities (I1)
+│   └── G5.2 escape from the backend container          closed by: non-root user, read-only FS, no capabilities (I1)
 └── OR G6  Hide or forge evidence
     └── G6.1 inject fake lines into the access log     closed by: URL-quoted path in log lines (N10)
 ```
 
 ## Findings and status
 
-Severity assumes deployment to real users. Every "fixed" row has at least one check in `backend/test_api.py`, except where the table says otherwise.
+Severity assumes deployment to real users. Every backend code fix (B and N rows) has at least one check in `backend/test_api.py`, except N3. Fixes that live in configuration (B9's loopback bind, B15's server banner, N2, N6, N8, N13 to N15, I1 to I3) and the frontend rows (F1 to F4, FP1 to FP4) are verified by the build, the live checks, pip-audit, the Docker runs and review instead.
 
 ### Backend (`backend/main.py`)
 
@@ -97,12 +98,12 @@ Severity assumes deployment to real users. Every "fixed" row has at least one ch
 
 ### New findings in this pass
 
-N1 to N4 came from my own review and the dependency audit. N5 to N15 came from the independent defensive review that ran after the first round of fixes.
+N1 to N4 came from my own review and the dependency audit. N5 to N15 came from the independent defensive review that ran after the first round of fixes. N16 came from the review of the finished branch.
 
 | ID | Sev | Finding | Fix |
 | --- | --- | --- | --- |
-| N1 | Medium | Next.js sets `X-Forwarded-For` only when the client did not send one, and its rewrite proxy does not append. With `TRUST_PROXY=1` and the backend reading the first entry, any caller could rotate the header and never be rate limited. | The backend now keys on the rightmost entry. A Caddy edge service in compose replaces any client value with the real client address, and the frontend no longer publishes a port. |
-| N2 | Medium | Starlette 0.48.0 had 12 known advisories, including CVE-2026-48710 and CVE-2026-54282 (`request.url` rebuilt from the Host header and path). | Upgraded to FastAPI 0.142.4 with Starlette 1.7.0, pinned. pip-audit now finds nothing. |
+| N1 | Medium | Next's `/api` rewrite proxy neither sets nor appends `X-Forwarded-For`: it passes a client-sent value through unchanged. With `TRUST_PROXY=1` and the backend reading the first entry, any caller could rotate the header and never be rate limited. | The backend now keys on the rightmost entry. A Caddy edge service in compose replaces any client value with the real client address, and the frontend no longer publishes a port. |
+| N2 | Medium | Starlette 0.48.0 had 6 known vulnerabilities (pip-audit printed 12 rows, two per vulnerability), including CVE-2026-48710 and CVE-2026-54282 (`request.url` rebuilt from the Host header and path). | Upgraded to FastAPI 0.142.4 with Starlette 1.7.0, pinned. pip-audit now finds nothing. |
 | N3 | Low | The rate-limit guard read `request.url.path`, which N2 shows can disagree with the routed path. | The guard now reads the routed `scope["path"]`. |
 | N4 | Low | The new daily pickup cap counted outside the write lock, so parallel creates could overshoot it. | `BEGIN IMMEDIATE` runs before the count. |
 | N5 | Medium | `DEMO_MODE` failed open. A production deploy that forgot the variable kept the self-crediting endpoint and the API docs. | The default is now off in both code and compose. The README shows `DEMO_MODE=1` for the demo. |
@@ -113,9 +114,10 @@ N1 to N4 came from my own review and the dependency audit. N5 to N15 came from t
 | N10 | Low | Log injection. A percent-encoded newline in the path wrote a forged line into the log. | Log lines carry the URL-quoted path. |
 | N11 | Low | The rate limit keyed on full IPv6 addresses, so one client could rotate through its /64. Past 10,000 keys, every request also scanned the whole table. | One bucket per IPv6 /64, and the idle sweep runs at most every 10 seconds. |
 | N12 | Low | Non-ASCII bytes in a key header crashed the constant-time compare with a 500, and weak keys were accepted. | Keys compare as bytes, and startup refuses keys shorter than 32 characters. |
-| N13 | Low | Next buffers up to 10 MB of every proxied body before FastAPI's 16 KiB limit applies. | `proxyClientMaxBodySize: "16kb"` in `next.config.ts`. |
+| N13 | Low | With `proxy.ts` in use, Next buffers a copy of up to 10 MB of every request body before FastAPI's 16 KiB limit applies. | `experimental.proxyClientMaxBodySize: "16kb"` in `next.config.ts` caps that copy. Next does not reject a larger body (it logs a warning and carries on), so the 413 still comes from FastAPI. |
 | N14 | Low | Only top-level packages were pinned, and nothing was hash-verified. | Hash-locked `requirements.txt` and `requirements-dev.txt`, built from `.in` files. The Dockerfile installs with `--require-hashes`. |
-| N15 | Low | Existing volumes created by the old root image are owned by root, so the new non-root image cannot open the database. | A one-time `chown` command next to the volume in `docker-compose.yml`, with a pointer in the README. Not tested here (no Docker builds on this machine). |
+| N15 | Low | Existing volumes created by the old root image are owned by root, so the new non-root image cannot open the database. | A one-time `chown` command next to the volume in `docker-compose.yml`, with a pointer in the README. Checked on 2026-10-16: on a root-owned volume the new image fails with "attempt to write a readonly database", and after the documented `chown` it writes as uid 10001. |
+| N16 | Low | A request that FastAPI rejected got a 500 instead of a 422 when the rejected value was NaN, Infinity or a lone surrogate: the default handler echoes the input and cannot JSON-encode it. For `POST /api/pickups` this was a regression from moving the weight bounds into the model. | A 422 handler that returns each error's location, message and type, without the input. |
 
 The review also raised five informational items that were not changed. Each has a recorded reason:
 
@@ -133,7 +135,7 @@ CPU time per request (process CPU, best of 7) on 10,000 pickups and 10,000 trans
 | --- | --- | --- | --- |
 | GET /api/state | 102.1 ms | 47.0 ms | 2.2× faster: one SQL aggregate over `json_each` replaces a Python loop (P2) |
 | GET /api/city | 198.9 ms | 46.9 ms | 4.2× faster: state is computed once instead of twice (P3) |
-| GET /api/pickups | 931.2 ms | 11.4 ms | 80× faster, mostly because it returns a page of 50 instead of all 10,000 rows (B6) |
+| GET /api/pickups | 931.2 ms | 11.4 ms | 81× faster, mostly because it returns a page of 50 instead of all 10,000 rows (B6) |
 | GET /api/catalog | 6.0 ms | 7.5 ms | +1.5 ms: the security pipeline (below) |
 | POST redeem | 7.3 ms | 9.6 ms | +2.3 ms: the pipeline, plus storing the code (B8) |
 
@@ -143,15 +145,15 @@ Other performance changes:
 
 - WAL journal mode with `synchronous=NORMAL` (P1).
 - Indexes on `pickups(status, day)`, `pickups(day, id)` and `txns(ts, id)` (P2).
-- A client-side stale-while-revalidate cache, so pages stop refetching the catalog (P4, FP3).
+- A client-side stale-while-revalidate cache, so a page visited before renders its data at once and revalidates in the background. The GET still runs on every mount and after every change, so P4 (catalog refetched on every page) and FP3 are mitigated, not fixed.
 
 ### Infrastructure
 
 | ID | Sev | Finding | Fix |
 | --- | --- | --- | --- |
-| I1 | Medium | The backend container ran as root. | Fixed: non-root user `sabz` (uid 10001). Compose adds `read_only`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges`, and memory and CPU limits for every service. |
+| I1 | Medium | The backend container ran as root. | Fixed: the backend runs as non-root user `sabz` (uid 10001) on a read-only root with a `/tmp` tmpfs. Every service gets `cap_drop: [ALL]`, `no-new-privileges`, and memory and CPU limits. The edge keeps `NET_BIND_SERVICE` and runs as root; the frontend runs as `node` and is not read-only. |
 | I2 | Medium | Dependencies were unpinned, and `httpx` shipped in production. | Fixed: hash-locked files (N14), with `httpx` moved to the dev requirements. |
-| I3 | Low | Base images were not pinned by digest. | Partly fixed. Tags are pinned. Digests are left as a comment because they could not be verified from this machine. |
+| I3 | Low | Base images were not pinned by digest. | Open. The images use floating major or minor tags (`python:3.12-slim`, `node:22-alpine`, `caddy:2-alpine`), unchanged from `main` apart from the new `caddy:2-alpine`. A comment in `backend/Dockerfile` says how to pin a digest. |
 
 ### Frontend
 
@@ -161,9 +163,9 @@ Other performance changes:
 | F2 | Low | 422 errors showed "[object Object]" or raw English text. | Fixed: errors carry the HTTP status, and pages map it to localized messages, including a new "details aren't valid" message. |
 | F3 | Low | Unhandled promise rejections and silent failures. | Fixed: inline, localized error states on redeem, home actions and missions, and a busy guard against double-clicks on quiz answers. |
 | F4 | Info | The `lang` cookie lacked `Secure`. | Fixed: `;secure` over HTTPS. |
-| FP1 | Perf | Blur on every card over animated blobs, and animations that never stopped. | Fixed: blur only on navigation chrome and sheets, near-solid cards, and animations stop on low-power devices and under reduced motion. |
+| FP1 | Perf | Blur on every card over animated blobs, and animations that never stopped. | Fixed: blur only on the navigation bars, the sheet backdrop and the transient points toast; cards and sheets are solid or near-solid. CSS animations stop on low-power devices and under reduced motion. |
 | FP2 | Perf | Counters re-rendered React on every frame. | Fixed: counters write text through a ref inside the animation frame. |
-| FP3 | Perf | Every page waterfalled its data after hydration. | Fixed: stale-while-revalidate GET cache, cleared by a refresh after any change. |
+| FP3 | Perf | Every page waterfalled its data after hydration. | Mitigated: a stale-while-revalidate GET cache, cleared by a refresh after any change. A page visited before renders from it at once; the first visit to each page still fetches after hydration. |
 | FP4 | Perf | Fonts loaded through CSS packages with no preload. | Fixed: `next/font/local` with preload and size-adjusted fallbacks. The unused font packages are removed. |
 
 Production CSP, as served by the built app (the nonce changes on every request):
@@ -189,14 +191,14 @@ The production build ran on the final code, with the backend in production mode.
 ## Static analysis and dependencies
 
 - **semgrep 1.179.0:** 293 rules on 18 files, including the Dockerfile and compose file, with 0 findings on the final code. An earlier scan before the review fixes also found nothing. Pattern rules cannot see authorization or race bugs, which is why the regression suite exists.
-- **pip-audit:** 12 advisories in Starlette 0.48.0 before. None after the upgrade, on both the installed environment and the hash-locked file.
-- **npm audit:** the registry's audit endpoint was unreachable from this machine on three attempts. Run `npm audit` before merging.
+- **pip-audit:** 6 vulnerabilities in Starlette 0.48.0 before (12 rows, two per vulnerability). None after the upgrade, on both the installed environment and the hash-locked file.
+- **npm audit (2026-10-16):** 3 high, all open. `next` 16.3.6 has 6 advisories, all fixed in 16.3.8: SSRF in Image Optimization (high), two cache-poisoning issues in SSG and ISR pages, a `use cache` Draft Mode leak, a metadata image route disclosure and a dev-server MCP endpoint disclosure. `sharp` 0.35.4, an optional dependency of the image optimizer, has a librsvg advisory fixed in 0.35.5. `source-map-js` 1.2.1 has an event-loop denial of service fixed in 1.2.2. The app uses no `next/image`, `use cache` or ISR, but Next serves `/_next/image` by default, so the SSRF is not ruled out. Fix: bump `next` to 16.3.8 or later and run `npm audit fix`.
 
 ## UI/UX (apple-design)
 
 - **Motion:** press feedback is critically damped and instant. Overshoot is kept for success moments only.
 - **Sheets:** bottom sheets follow the finger 1:1 from where they were grabbed and resist when pulled upward. On release, the flick velocity is projected forward to decide whether the sheet closes. A small spring carries that velocity. It is critically damped after a slow release and slightly bouncy only after a flick. A new touch interrupts it mid-flight. Taps on buttons inside the sheet still work, because a drag starts only past 10 px or from the handle. Desktop keeps the centered card. Reduced motion uses a cross-fade.
-- **Materials:** blur only on navigation chrome and sheets, and never glass on glass. Surfaces turn solid under reduced transparency, and solid with defined borders under increased contrast.
+- **Materials:** blur only on the navigation bars, the sheet backdrop and the transient points toast, and never glass on glass; cards and sheets are solid. Surfaces turn solid under reduced transparency, and solid with defined borders under increased contrast.
 - **Feedback:** inline status, completion and error states, with localized messages for "not enough points", "slow down" and invalid input.
 - **Accessibility:**
   - Quantity buttons carry names, and time slots expose `aria-pressed`.
@@ -220,7 +222,7 @@ The review proposed 15 cuts worth about 54 lines.
   - The unused font packages removed.
 - **Overridden (3):**
   - The sheet spring and momentum code stays, because Apple-style interruptible springs were requested.
-  - The pagination cursor stays, because without it pickups beyond the first 200 are unreachable.
+  - The pagination cursor stays, because without it API clients cannot reach pickups beyond the largest page of 200.
   - The `IMMEDIATE` transaction mode stays, because it backs the race fixes at no cost.
 - **Superseded (1):** the unused `codes.used` column is now used by the partner consume endpoint (N7).
 
@@ -228,7 +230,7 @@ The review proposed 15 cuts worth about 54 lines.
 
 `graphify-out/` holds a knowledge graph of the final code and docs: 313 nodes, 693 edges and 18 communities. Open `graph.html` in a browser, or read `GRAPH_REPORT.md`.
 
-- **Most connected:** the audit report itself, then the i18n hook, the threat model, the pickup page and the shared API hook.
+- **Most connected:** the audit report itself, then the i18n hook, the threat model, the tsconfig compiler options, the pickup page, the error box and the shared API hook.
 - **Cleanly separated:** the security controls form their own small clusters (body limit, logging, rate limiter, request guards).
 - **Health check:** 27 extracted edges point at nodes outside the graph, mostly package references, and were dropped. 7 duplicate edges were merged.
 - **Excluded:** local working notes, via `.graphifyignore`.
@@ -238,16 +240,18 @@ The review proposed 15 cuts worth about 54 lines.
 - **Blocked by the safety classifier.** Three pieces were skipped rather than retried on another model: loading the red-team-tools skill, loading the red-team-tactics skill, and a dedicated agent that replays attack scripts against the old and new code. The abuse cases they targeted are covered by the regression suite.
 - **No real user authentication.** The app still has one demo user. Production needs real sign-in, per-user balances and quotas, and a collector role.
 - **Rate limits are per process.** That is fine for one instance. Use a shared store such as Redis if the API scales out.
-- **Docker images were not built here** because of machine load. The hash-locked install, the Caddy edge and the volume `chown` note need one `docker compose up --build` before merging.
+- **Docker:** the backend image build, the volume `chown` note and the Caddy edge were checked on 2026-10-16. The frontend image and a full `docker compose up --build` still need one run before merging.
+- **Clean-clone frontend image:** `frontend/public` holds no tracked file, so on a fresh clone the frontend Dockerfile's `COPY --from=build /app/public` fails.
+- **Web history page:** it asks for the default page of 50 pickups and has no load-more, so older pickups are reachable only through the API.
 - **Host-local callers** can reach the loopback-bound backend directly with a forged `X-Forwarded-For`. Only processes on the host can do this.
 - **Not pinned by digest:** `python:3.12-slim`, `node:22-alpine` and `caddy:2-alpine` (I3).
-- **npm audit** could not reach the registry.
+- **npm advisories:** 3 high-severity advisories in the frontend lockfile are open (`next` 16.3.6, `sharp`, `source-map-js`); see "Static analysis and dependencies".
 
 ## How to verify
 
 ```bash
 cd backend && python3 -m venv .venv && .venv/bin/python -m pip install --require-hashes -r requirements-dev.txt
 .venv/bin/python test_api.py                       # prints "ok"
-cd ../frontend && npm ci && npx tsc --noEmit && npm run build && npm audit
+cd ../frontend && npm ci && npx tsc --noEmit && npm run build && npm audit   # 3 high until next is bumped
 cd .. && DEMO_MODE=1 docker compose up --build     # production: leave DEMO_MODE unset, set COLLECTOR_KEY and PARTNER_KEY (32+ chars)
 ```
