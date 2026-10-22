@@ -1,10 +1,11 @@
 # SabzBank · سبزبانک
 
-Iranian take on [Recyclebank](https://www.recyclebank.com/) (see `26_Recyclebank_Business_Plan_Toolkit_Iran_filled.pdf`):
-citizens hand in separated dry waste, earn points, and spend them with partners; the municipality gets a live dashboard.
+Iranian take on [Recyclebank](https://www.recyclebank.com/): citizens hand in separated dry waste, earn points,
+and spend them with partners; the municipality gets a dashboard (sample data for now, labelled as such).
 
 - `frontend/` Next.js 16 (App Router, Tailwind v4) — fa/en with RTL, light/dark/system theme, fully responsive
-- `backend/` FastAPI + SQLite — single demo user, seeded history
+- `backend/` FastAPI + SQLite — single demo user; the sample history is seeded only with `DEMO_MODE=1`
+- `docs/` design, API, security, operations and QA documents: start at [docs/README.md](docs/README.md)
 
 ## Run with Docker
 
@@ -13,8 +14,10 @@ DEMO_MODE=1 docker compose up --build   # demo: API docs and "Simulate delivery"
 ```
 
 Web: http://localhost:3026 · API docs (demo only): http://localhost:8026/docs (override with `WEB_PORT` / `API_PORT`).
-In production leave `DEMO_MODE` unset and set `COLLECTOR_KEY` and `PARTNER_KEY`, 32+ characters each
+In production leave `DEMO_MODE` unset and set `COLLECTOR_KEY` and `PARTNER_KEY`, 32+ characters each with at least 10 distinct ones
 (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`). Upgrading a volume made by the old root image: see `docker-compose.yml`.
+Collector and partner clients send `X-Collector-Key` or `X-Partner-Key`, and every POST needs `Content-Type: application/json`
+(a `{}` body is fine), or it gets 415.
 
 ## Run locally
 
@@ -22,7 +25,8 @@ In production leave `DEMO_MODE` unset and set `COLLECTOR_KEY` and `PARTNER_KEY`,
 cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 DEMO_MODE=1 .venv/bin/uvicorn main:app --port 8026 --no-proxy-headers   # smoke test: .venv/bin/python test_api.py
 
-cd frontend && npm install
+# in a second terminal, from the repo root
+cd frontend && npm ci --ignore-scripts
 BACKEND_URL=http://localhost:8026 npm run dev -- -p 3026
 ```
 

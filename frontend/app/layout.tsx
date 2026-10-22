@@ -6,8 +6,8 @@ import { I18nProvider, type Locale } from "@/lib/i18n";
 import { Shell } from "@/components/shell";
 
 // next/font/local: self-hosted, preloaded, with a size-adjusted fallback (no CLS/FOUT).
-const inter = localFont({ src: "./fonts/inter-latin.woff2", weight: "100 900", display: "swap", variable: "--font-inter" });
-const vazir = localFont({ src: "./fonts/vazirmatn-arabic.woff2", weight: "100 900", display: "swap", variable: "--font-vazir" });
+const inter = localFont({ src: "./fonts/inter-latin.woff2", weight: "100 900", variable: "--font-inter" });
+const vazir = localFont({ src: "./fonts/vazirmatn-arabic.woff2", weight: "100 900", variable: "--font-vazir" });
 
 export const metadata: Metadata = {
   title: "SabzBank · سبزبانک",
@@ -20,7 +20,7 @@ export const viewport: Viewport = {
 };
 
 // runs before paint so the saved theme never flashes
-const themeScript = `try{var p=localStorage.getItem("theme")||"system";document.documentElement.dataset.theme=p==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):p}catch(e){}`;
+const themeScript = `try{var p=localStorage.getItem("theme");p=p==="light"||p==="dark"?p:"system";document.documentElement.dataset.theme=p==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):p}catch(e){}`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale: Locale = (await cookies()).get("lang")?.value === "en" ? "en" : "fa";

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowUpRight, CalendarDays, Clock, Gift, Mountain, Plus, Sparkles, Target, TreePine, Truck } from "lucide-react";
 import { api, refresh, useApi, type Catalog, type Pickup, type State } from "@/lib/api";
 import { formatDay, useI18n, type Key } from "@/lib/i18n";
-import { Confetti, Counter, ErrorBox, Loading, MATERIAL_ICON, Rings, Slot, TIER_STYLE, useErr } from "@/components/ui";
+import { Confetti, Counter, ErrorBox, Loading, MATERIAL_ICON, Rings, Slot, TIER_STYLE, errKey } from "@/components/ui";
 
 function Wallet({ s }: { s: State }) {
   const { t } = useI18n();
@@ -41,10 +41,11 @@ function Wallet({ s }: { s: State }) {
 function Impact({ s, c }: { s: State; c: Catalog }) {
   const { t } = useI18n();
   const done = c.missions.filter((m) => m.done).length;
+  // rings keep the bright colours; the figures use the matching text tokens (the bright ones are 2-3.5:1 on white)
   const rows = [
-    { v: s.impact.kg, max: 50, color: "#30d158", label: t("kg_recycled"), d: 1 },
-    { v: s.impact.co2, max: 80, color: "#0ea5e9", label: t("co2_saved"), d: 1 },
-    { v: done, max: c.missions.length, color: "#ff375f", label: t("missions_done"), d: 0 },
+    { v: s.impact.kg, max: 50, color: "#30d158", text: "text-brand-text", label: t("kg_recycled"), d: 1 },
+    { v: s.impact.co2, max: 80, color: "#0ea5e9", text: "text-sky-text", label: t("co2_saved"), d: 1 },
+    { v: done, max: c.missions.length, color: "#ff375f", text: "text-rose-text", label: t("missions_done"), d: 0 },
   ];
   return (
     <div className="card flex flex-col p-6">
@@ -54,7 +55,7 @@ function Impact({ s, c }: { s: State; c: Catalog }) {
         <ul className="grid gap-3">
           {rows.map((r) => (
             <li key={r.label}>
-              <div className="text-2xl font-bold" style={{ color: r.color }}><Counter value={r.v} digits={r.d} /></div>
+              <div className={`text-2xl font-bold ${r.text}`}><Counter value={r.v} digits={r.d} /></div>
               <div className="text-xs text-muted">{r.label}</div>
             </li>
           ))}
@@ -65,17 +66,16 @@ function Impact({ s, c }: { s: State; c: Catalog }) {
 }
 
 function Upcoming({ p, c, onDelivered }: { p: Pickup | null; c: Catalog; onDelivered: (pts: number) => void }) {
-  const { t, n, pick, locale } = useI18n();
-  const msg = useErr();
+  const { t, n, signed, pick, locale } = useI18n();
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState<Key | "">("");
   const act = async (path: string) => {
     setBusy(true); setErr("");
     try {
       const r = await api<Pickup | { ok: true }>(path, {});
       if ("points" in r) onDelivered(r.points);
       refresh();
-    } catch (e) { setErr(msg(e)); } finally { setBusy(false); }
+    } catch (e) { setErr(errKey(e)); refresh(); } finally { setBusy(false); }
   };
   if (!p) return (
     <div className="card flex flex-col items-start gap-4 p-6">
@@ -91,7 +91,7 @@ function Upcoming({ p, c, onDelivered }: { p: Pickup | null; c: Catalog; onDeliv
     <div className="card flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 font-bold"><Truck size={18} className="text-brand" /> {t("upcoming")}</h2>
-        <span className="rounded-full bg-brand-soft px-3 py-1 text-xs font-bold text-brand">+{n(p.est)} {t("est")}</span>
+        <span className="rounded-full bg-brand-soft px-3 py-1 text-xs font-bold text-brand-text">{signed(p.est)} {t("est")}</span>
       </div>
       <div className="flex flex-wrap gap-4 text-sm">
         <span className="flex items-center gap-1.5"><CalendarDays size={16} className="text-muted" /> {formatDay(p.day, locale)}</span>
@@ -100,21 +100,21 @@ function Upcoming({ p, c, onDelivered }: { p: Pickup | null; c: Catalog; onDeliv
       <div className="flex flex-wrap gap-2">
         {Object.entries(p.items).map(([m, kg]) => {
           const Icon = MATERIAL_ICON[m as keyof typeof MATERIAL_ICON], mat = c.materials[m as keyof typeof c.materials];
-          return <span key={m} className="chip flex items-center gap-1.5 px-3 py-1.5 text-sm"><Icon size={15} style={{ color: mat.color }} /> {pick(mat)} · {n(kg!, 1)} {t("kg")}</span>;
+          return <span key={m} className="chip flex items-center gap-1.5 px-3 py-1.5 text-sm"><Icon size={15} style={{ color: mat.color }} /> {pick(mat)}{t("sep")}{n(kg!, 1)} {t("kg")}</span>;
         })}
       </div>
       {c.demo && <p className="text-xs text-muted">{t("simulate_d")}</p>}
       <div className="flex flex-wrap gap-2">
         {c.demo && <button disabled={busy} onClick={() => act(`/pickups/${p.id}/complete`)} className="btn btn-primary press h-11 flex-1">{t("simulate")}</button>}
-        <button disabled={busy} onClick={() => act(`/pickups/${p.id}/cancel`)} className="btn press h-11 text-muted hover:text-red-500">{t("cancel_req")}</button>
+        <button disabled={busy} onClick={() => act(`/pickups/${p.id}/cancel`)} className="btn press h-11 text-muted hover:text-danger">{t("cancel_req")}</button>
       </div>
-      {err && <p role="alert" className="text-sm font-semibold text-red-500">{err}</p>}
+      {err && <p role="alert" className="text-sm font-semibold text-danger">{t(err)}</p>}
     </div>
   );
 }
 
 export default function Home() {
-  const { t, n, pick, locale } = useI18n();
+  const { t, signed, pick, locale } = useI18n();
   const st = useApi<State>("/state"), cat = useApi<Catalog>("/catalog");
   const [toast, setToast] = useState<number | null>(null);
   if (st.error || cat.error) return <ErrorBox onRetry={() => { st.reload(); cat.reload(); }} />;
@@ -137,7 +137,7 @@ export default function Home() {
         <Link href="/pickup" className="card press lift group relative overflow-hidden p-6 md:col-span-2">
           <div className="absolute -end-10 -top-10 size-40 rounded-full bg-gradient-to-br from-brand to-brand-2 opacity-20 blur-2xl transition-opacity group-hover:opacity-40" />
           <div className="flex items-center justify-between">
-            <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-brand to-brand-2 text-white shadow-lg shadow-brand/30"><Truck /></span>
+            <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-brand-fill to-brand-fill-2 text-on-brand shadow-lg shadow-brand/30"><Truck /></span>
             <ArrowUpRight className="text-muted transition-transform group-hover:-translate-y-1 rtl:-scale-x-100" />
           </div>
           <h3 className="mt-4 text-lg font-bold">{t("quick_pickup")}</h3>
@@ -161,11 +161,11 @@ export default function Home() {
       {toast !== null && (
         <>
           <Confetti />
-          <div aria-hidden className="pop glass fixed inset-x-0 top-24 z-[70] mx-auto w-fit rounded-full px-6 py-3 text-lg font-bold shadow-2xl">+{n(toast)} {t("points")} 🎉</div>
+          <div aria-hidden className="pop glass fixed inset-x-0 top-24 z-[70] mx-auto w-fit rounded-full px-6 py-3 text-lg font-bold shadow-2xl">{signed(toast)} {t("points")} 🎉</div>
         </>
       )}
       {/* completion feedback: a live region must already exist before its text changes to be announced */}
-      <p role="status" className="sr-only">{toast !== null ? `+${n(toast)} ${t("points")}` : ""}</p>
+      <p role="status" className="sr-only">{toast !== null ? `${signed(toast)} ${t("points")}` : ""}</p>
     </div>
   );
 }

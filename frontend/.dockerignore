@@ -1,3 +1,7 @@
 node_modules
 .next
 npm-debug.log
+# never send local secrets into the build context (COPY . . would bake them into a layer)
+.env*
+# a host tsc cache could let the image's type check skip files
+*.tsbuildinfo

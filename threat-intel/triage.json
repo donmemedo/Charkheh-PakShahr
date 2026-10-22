@@ -1,0 +1,4 @@
+{
+  "_readme": "Accepted risks for scripts/threat_intel.py. Add {\"id\": \"GHSA-... or CVE-...\", \"package\": \"name as in the lockfile\", \"reason\": \"why it is not exploitable here, and the plan\", \"expires\": \"YYYY-MM-DD\"}. An entry suppresses HIGH/CRITICAL/UNKNOWN findings until its expiry date (inclusive), then the gate fails again so someone decides anew. Keep expiries at 90 days or less. A CISA KEV match is never suppressed. Remove entries the brief reports as stale.",
+  "entries": []
+}

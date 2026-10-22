@@ -16,14 +16,15 @@ export type City = { kpi: Record<"tons" | "mau" | "participation" | "landfillSav
 
 // GET cache: stale-while-revalidate across client navigations. Only ever filled in the browser.
 const cache = new Map<string, unknown>();
+let epoch = 0; // bumped by refresh(): a GET sent before the last mutation may answer after the refetch, and must not win
 
 export async function api<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, body === undefined
-    ? { cache: "no-store" }
-    : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status }); // useErr() maps the status to localized copy
-  if (body === undefined) cache.set(path, data);
+  const e = epoch;
+  const signal = AbortSignal.timeout(15_000); // a stalled request fails like a network error instead of spinning forever
+  const res = await fetch(`/api${path}`, body === undefined ? { cache: "no-store", signal } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status }); // errKey() maps the status to localized copy
+  const data = await res.json(); // a 200 that is not JSON (captive portal, proxy page) rejects too, never becomes {}
+  if (body === undefined && e === epoch) cache.set(path, data);
   return data as T;
 }
 
@@ -31,13 +32,17 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
 export function useApi<T>(path: string) {
   const [data, setData] = useState<T | undefined>(() => cache.get(path) as T | undefined);
   const [error, setError] = useState(false);
-  const load = useCallback(() => api<T>(path).then((d) => { setData(d); setError(false); }, () => setError(true)), [path]);
+  const load = useCallback(() => {
+    const e = epoch;
+    return api<T>(path).then((d) => { if (e === epoch) { setData(d); setError(false); } }, () => { if (e === epoch) setError(true); });
+  }, [path]);
   useEffect(() => {
     load();
     window.addEventListener("sabz:refresh", load);
     return () => window.removeEventListener("sabz:refresh", load);
   }, [load]);
-  return { data, error, reload: load };
+  // a failed revalidation keeps the cached data on screen: error only when there is nothing to show
+  return { data, error: error && data === undefined, reload: load };
 }
 
-export const refresh = () => { cache.clear(); window.dispatchEvent(new Event("sabz:refresh")); };
+export const refresh = () => { epoch++; cache.clear(); window.dispatchEvent(new Event("sabz:refresh")); };

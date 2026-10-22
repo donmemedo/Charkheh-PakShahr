@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Cloud, Handshake, Mountain, Percent, Recycle, Users, type LucideIcon } from "lucide-react";
 import { useApi, type Catalog, type City } from "@/lib/api";
 import { useI18n, type Key } from "@/lib/i18n";
-import { Counter, ErrorBox, Loading, PageHeader } from "@/components/ui";
+import { Counter, ErrorBox, Loading, PageHeader, SampleBadge } from "@/components/ui";
 
 const KPI: { k: keyof City["kpi"]; label: Key; icon: LucideIcon; tint: string; digits?: number; pct?: boolean }[] = [
   { k: "tons", label: "k_tons", icon: Recycle, tint: "from-emerald-400 to-green-600" },
@@ -25,24 +25,35 @@ function Area({ data }: { data: City["months"] }) {
   const label = (i: number) => new Date(now.getFullYear(), now.getMonth() - (data.length - 1 - i), 15)
     .toLocaleDateString(locale === "fa" ? "fa-IR-u-ca-persian" : "en-US", { month: "short" });
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-56 w-full overflow-visible rtl:-scale-x-100" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="var(--brand)" stopOpacity=".45" /><stop offset="1" stopColor="var(--brand)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0.25, 0.5, 0.75].map((g) => <line key={g} x1="0" x2={W} y1={H * g} y2={H * g} stroke="var(--line)" strokeDasharray="4 6" vectorEffect="non-scaling-stroke" />)}
-        <path d={`${line} L${W},${H} L0,${H} Z`} fill="url(#fill)" style={{ opacity: on ? 1 : 0, transition: "opacity 1.2s .4s" }} />
-        <path d={line} fill="none" stroke="var(--brand)" strokeWidth="3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" pathLength={1}
-          strokeDasharray="1" strokeDashoffset={on ? 0 : 1} style={{ transition: "stroke-dashoffset 1.8s cubic-bezier(.2,.8,.2,1)" }} />
-        {pts.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="5" fill="var(--bg)" stroke="var(--brand)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" className="cursor-pointer">
-            <title>{`${label(i)}: ${n(data[i].tons)}`}</title>
-          </circle>
-        ))}
-      </svg>
-      <div className="mt-2 flex justify-between text-[11px] text-muted">{data.map((_, i) => <span key={i} className={i % 2 ? "hidden sm:inline" : ""}>{label(i)}</span>)}</div>
+    // fills its card (it stretches to the donut card's height on wide screens); y values sit in a gutter at the start
+    <div className="flex flex-1 flex-col">
+      <div className="flex min-h-56 flex-1 gap-2">
+        <div aria-hidden className="tnum relative w-8 shrink-0 text-xs text-muted">
+          {[0.25, 0.5, 0.75].map((g) => <span key={g} className="absolute end-0 -translate-y-1/2" style={{ top: `${g * 100}%` }}>{n(Math.round(max * (1 - g)))}</span>)}
+        </div>
+        <div className="relative flex-1">
+          <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full overflow-visible rtl:-scale-x-100" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="fill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stopColor="var(--brand)" stopOpacity=".45" /><stop offset="1" stopColor="var(--brand)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {[0.25, 0.5, 0.75].map((g) => <line key={g} x1="0" x2={W} y1={H * g} y2={H * g} stroke="var(--line)" strokeDasharray="4 6" vectorEffect="non-scaling-stroke" />)}
+            <path d={`${line} L${W},${H} L0,${H} Z`} fill="url(#fill)" style={{ opacity: on ? 1 : 0, transition: "opacity 1.2s .4s" }} />
+            <path d={line} fill="none" stroke="var(--brand)" strokeWidth="3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" pathLength={1}
+              strokeDasharray="1" strokeDashoffset={on ? 0 : 1} style={{ transition: "stroke-dashoffset 1.8s cubic-bezier(.2,.8,.2,1)" }} />
+            {/* markers as zero-length round-capped strokes: unlike a <circle>, they stay round when the plot stretches */}
+            {pts.map(([x, y], i) => (
+              <g key={i} className="cursor-pointer" strokeLinecap="round">
+                <title>{`${label(i)}: ${n(data[i].tons)}`}</title>
+                <line x1={x} x2={x} y1={y} y2={y} stroke="var(--brand)" strokeWidth="12.5" vectorEffect="non-scaling-stroke" />
+                <line x1={x} x2={x} y1={y} y2={y} stroke="var(--bg)" strokeWidth="7.5" vectorEffect="non-scaling-stroke" />
+              </g>
+            ))}
+          </svg>
+        </div>
+      </div>
+      <div className="ms-10 mt-2 flex justify-between text-xs text-muted">{data.map((_, i) => <span key={i} className={i % 2 ? "hidden sm:inline" : ""}>{label(i)}</span>)}</div>
     </div>
   );
 }
@@ -85,11 +96,7 @@ export default function CityPage() {
   const max = districts[0].points;
   return (
     <>
-      <PageHeader title={t("city_title")} sub={t("city_sub")}>
-        <span role="status" className="flex items-center gap-2 rounded-full bg-brand-soft px-4 py-2 text-sm font-bold text-brand">
-          <span aria-hidden className="relative flex size-2.5"><span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-75" /><span className="relative inline-flex size-2.5 rounded-full bg-brand" /></span> {t("live")}
-        </span>
-      </PageHeader>
+      <PageHeader title={t("city_title")} sub={t("city_sub")}><SampleBadge /></PageHeader>
       <div className="stagger grid grid-cols-1 gap-5">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
           {KPI.map(({ k, label, icon: Icon, tint, digits, pct }) => (
@@ -101,7 +108,7 @@ export default function CityPage() {
           ))}
         </div>
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <section className="card p-6 lg:col-span-2"><h2 className="mb-4 font-bold">{t("monthly")}</h2><Area data={months} /></section>
+          <section className="card flex flex-col p-6 lg:col-span-2"><h2 className="mb-4 font-bold">{t("monthly")}</h2><Area data={months} /></section>
           <section className="card p-6"><h2 className="mb-4 font-bold">{t("mix")}</h2><Donut mix={materials} cat={cat.data} total={kpi.tons} /></section>
         </div>
         <section className="card p-6">
